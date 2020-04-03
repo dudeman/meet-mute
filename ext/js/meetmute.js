@@ -18,6 +18,8 @@ const cameraToggleKeyDownEvent = new KeyboardEvent('keydown', {
   "keyCode": 69,
   "which": 69
 })
+let isListeningToKeys = false;
+
 
 const waitUntilElementExists = (DOMSelector, MAX_TIME = 5000) => {
   let timeout = 0
@@ -65,7 +67,7 @@ var bodyClassListener = (function () {
       registerListener();
     return;
   }
-
+  
   function removeCallback(find_fn) {
     callbacks = callbacks.filter((fn, id) => fn != find_fn);
     console.log("Remove callback", find_fn, callbacks.length, callbacks);
@@ -74,14 +76,28 @@ var bodyClassListener = (function () {
       bodyClassObserver.disconnect();
     }
   }
-
+  
   return {addCallback: addCallback, removeCallback: removeCallback};
 })();
 
+const spaceWatcher = (muteWatcher) => {
+  console.info("v11 listening to keys");
+  if (!isListeningToKeys) {
+    const toggle = tip => ({ key }) => {
+      key === " " &&
+        document
+          .querySelectorAll("[data-tooltip]")
+          .forEach(el => el.dataset.tooltip.includes(tip) && el.click());
+    };
+  document.body.onkeyup = toggle('Turn off microphone');
+  document.body.onkeydown = toggle('Turn on microphone');
+  }
+}
+
 var buttonWatcher = function (selector, type, keyToggle) {
-  var waitingForButton = false
-  var muted = false
-  var isMutedObserver
+  var waitingForButton = false;
+  var muted = false;
+  var isMutedObserver;
 
   function watchIsMuted(el) {
     if (isMutedObserver) {
@@ -89,7 +105,7 @@ var buttonWatcher = function (selector, type, keyToggle) {
     }
     isMutedObserver = new MutationObserver((mutations) => {
       let newValue = mutations[0].target.getAttribute('data-is-muted') == 'true'
-
+      console.log("mutation observed ", newValue, muted)
       if (newValue != muted) {
         updateMuted(newValue)
       }
@@ -171,7 +187,7 @@ var buttonWatcher = function (selector, type, keyToggle) {
   chrome.runtime.onMessage.addListener(messageListener);
 
   waitFor();
-  return {waitFor: waitFor, disconnect: disconnect};
+  return {waitFor: waitFor, disconnect: disconnect, isMuted, sendKeyboardCommand, updateMuted};
 };
 
 window.onbeforeunload = (event) => {
@@ -184,11 +200,19 @@ window.onbeforeunload = (event) => {
   }
 }
 
-var mainProcess = (function () {
-  var watchers = [buttonWatcher(MUTE_BUTTON, "mute", muteToggleKeyDownEvent), 
-                  buttonWatcher(CAMERA_BUTTON, "video", cameraToggleKeyDownEvent)];
-  var bodyListeners = watchers.map(watcher => { var fn = () => watcher.waitFor(); bodyClassListener.addCallback(fn); return fn; });
 
+var mainProcess = (function () {
+  const muteWatcher = buttonWatcher(
+    MUTE_BUTTON,
+    "mute",
+    muteToggleKeyDownEvent
+  );
+  var watchers = [
+    muteWatcher,
+    buttonWatcher(CAMERA_BUTTON, "video", cameraToggleKeyDownEvent)
+  ];
+  var bodyListeners = watchers.map(watcher => { var fn = () => watcher.waitFor(); bodyClassListener.addCallback(fn); return fn; });
+  spaceWatcher(muteWatcher)
   function disconnect() {
     console.log("Disconnecting");
     bodyListeners.forEach(listener => bodyClassListener.removeCallback(listener));
